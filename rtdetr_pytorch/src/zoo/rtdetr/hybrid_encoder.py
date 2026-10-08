@@ -145,7 +145,7 @@ class TransformerEncoderLayer(nn.Module):
         if self.normalize_before:
             src = self.norm1(src)
         q = k = self.with_pos_embed(src, pos_embed)
-        src, _ = self.self_attn(q, k, value=src, attn_mask=src_mask)
+        src, _ = self.self_attn(q, k, value=src, attn_mask=src_mask, need_weights=False)
 
         src = residual + self.dropout1(src)
         if not self.normalize_before:
@@ -259,8 +259,9 @@ class HybridEncoder(nn.Module):
                 pos_embed = self.build_2d_sincos_position_embedding(
                     self.eval_spatial_size[1] // stride, self.eval_spatial_size[0] // stride,
                     self.hidden_dim, self.pe_temperature)
-                setattr(self, f'pos_embed{idx}', pos_embed)
-                # self.register_buffer(f'pos_embed{idx}', pos_embed)
+                # persistent=False keeps it out of state_dict, so released
+                # checkpoints still load with strict=True
+                self.register_buffer(f'pos_embed{idx}', pos_embed, persistent=False)
 
     @staticmethod
     def build_2d_sincos_position_embedding(w, h, embed_dim=256, temperature=10000.):
@@ -294,7 +295,7 @@ class HybridEncoder(nn.Module):
                     pos_embed = self.build_2d_sincos_position_embedding(
                         w, h, self.hidden_dim, self.pe_temperature).to(src_flatten.device)
                 else:
-                    pos_embed = getattr(self, f'pos_embed{enc_ind}', None).to(src_flatten.device)
+                    pos_embed = getattr(self, f'pos_embed{enc_ind}', None)
 
                 memory = self.encoder[i](src_flatten, pos_embed=pos_embed)
                 proj_feats[enc_ind] = memory.permute(0, 2, 1).reshape(-1, self.hidden_dim, h, w).contiguous()
